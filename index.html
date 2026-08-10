@@ -198,6 +198,21 @@
             background: #eef3fb;
         }
 
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            font-size: 0.9rem;
+        }
+
+        .stat-row:last-child { border-bottom: none; }
+        .stat-row .stat-date { font-weight: bold; }
+        .stat-row .stat-nums { display: flex; gap: 14px; }
+        .stat-row .stat-badge { display: flex; align-items: center; gap: 4px; }
+        .stat-row .stat-badge.accident { color: var(--danger); font-weight: bold; }
+
         .loading-overlay {
             text-align: center;
             padding: 20px;
@@ -229,6 +244,38 @@
         .walk-times.show { display: grid; }
 
         .walk-times label { font-size: 0.8rem; margin-bottom: 3px; }
+
+        .per-event-times {
+            display: none;
+            background: #fff8ea;
+            border: 1px solid #f3e3b8;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+
+        .per-event-times.show { display: block; }
+
+        .per-event-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .per-event-row label {
+            font-size: 0.85rem;
+            font-weight: normal;
+            margin-bottom: 0;
+            white-space: nowrap;
+        }
+
+        .per-event-row input {
+            width: auto;
+            flex: 1;
+            padding: 6px;
+        }
     </style>
 
     <!-- Firebase -->
@@ -338,6 +385,34 @@
                 </div>
             </div>
 
+            <div class="per-event-times" id="perEventTimes">
+                <div style="font-size:0.85rem; font-weight:bold; margin-bottom:8px;">שעה שונה לכל אירוע (אופציונלי - אחרת נשתמש בשעת הדיווח הכללית):</div>
+                <div class="per-event-row" id="peRow_walk" style="display:none;">
+                    <label>🦮 טיול</label>
+                    <input type="time" id="eventTime_walk">
+                </div>
+                <div class="per-event-row" id="peRow_food" style="display:none;">
+                    <label>🍖 ארוחה</label>
+                    <input type="time" id="eventTime_food">
+                </div>
+                <div class="per-event-row" id="peRow_pee" style="display:none;">
+                    <label>💦 פיפי</label>
+                    <input type="time" id="eventTime_pee">
+                </div>
+                <div class="per-event-row" id="peRow_poo" style="display:none;">
+                    <label>💩 קקי</label>
+                    <input type="time" id="eventTime_poo">
+                </div>
+                <div class="per-event-row" id="peRow_grass" style="display:none;">
+                    <label>🌱 שיחק בדשא</label>
+                    <input type="time" id="eventTime_grass">
+                </div>
+                <div class="per-event-row" id="peRow_excitedpee" style="display:none;">
+                    <label>😅 פיפי התרגשות</label>
+                    <input type="time" id="eventTime_excitedpee">
+                </div>
+            </div>
+
             <div class="walk-times" id="walkTimes">
                 <div>
                     <label>שעת התחלה</label>
@@ -373,6 +448,11 @@
         <h2>📜 היסטוריית דיווחים אחרונים</h2>
         <div id="logsList"><div class="loading-overlay">טוען...</div></div>
     </div>
+
+    <div class="logs-section" style="margin-top: 20px;">
+        <h2>📊 סטטיסטיקה יומית</h2>
+        <div id="statsList"><div class="loading-overlay">טוען...</div></div>
+    </div>
 </div>
 
 <script>
@@ -389,6 +469,7 @@
     let logs = []; // array of {key, date, user, details, location}
     let firstSnapshot = true;
     let editingKey = null;
+    let reportTimeManuallySet = false;
 
     function setStatus(msg, isError) {
         const el = document.getElementById('syncStatus');
@@ -436,6 +517,16 @@
         };
     }
 
+    const eventKeys = ['walk', 'food', 'pee', 'poo', 'grass', 'excitedpee'];
+    const eventCheckboxIds = {
+        walk: 'actWalk', food: 'actFood', pee: 'actPee',
+        poo: 'actPoo', grass: 'actGrass', excitedpee: 'actExcitedPee'
+    };
+    const eventLabels = {
+        walk: 'טיול', food: 'ארוחה', pee: 'פיפי',
+        poo: 'קקי', grass: 'שיחק בדשא', excitedpee: 'פיפי התרגשות'
+    };
+
     function toggleActive(el) {
         const checkbox = el.querySelector('input');
         checkbox.checked = !checkbox.checked;
@@ -444,6 +535,23 @@
         if (checkbox.id === 'actWalk') {
             document.getElementById('walkTimes').classList.toggle('show', checkbox.checked);
         }
+
+        updatePerEventPanel();
+    }
+
+    function updatePerEventPanel() {
+        let checkedCount = 0;
+        eventKeys.forEach(key => {
+            const cb = document.getElementById(eventCheckboxIds[key]);
+            const isChecked = cb && cb.checked;
+            if (isChecked) checkedCount++;
+            const row = document.getElementById('peRow_' + key);
+            if (row) row.style.display = isChecked ? 'flex' : 'none';
+        });
+
+        // Only show the whole panel when 2+ activities are checked - with just one,
+        // the general "שעת הדיווח" field already covers it.
+        document.getElementById('perEventTimes').classList.toggle('show', checkedCount >= 2);
     }
 
     document.getElementById('dogForm').addEventListener('submit', async function(e) {
@@ -451,27 +559,18 @@
 
         const submitBtn = document.getElementById('submitBtn');
         const user = document.getElementById('reporter').value;
-        const walk = document.getElementById('actWalk').checked;
-        const food = document.getElementById('actFood').checked;
-        const pee = document.getElementById('actPee').checked;
-        const poo = document.getElementById('actPoo').checked;
-        const grass = document.getElementById('actGrass').checked;
-        const excitedPee = document.getElementById('actExcitedPee').checked;
         const location = document.getElementById('location').value;
         const notes = document.getElementById('notes').value;
         const walkStart = document.getElementById('walkStart').value;
         const walkEnd = document.getElementById('walkEnd').value;
         const reportTime = document.getElementById('reportTime').value;
 
-        let actions = [];
-        if (walk) actions.push("טיול");
-        if (food) actions.push("ארוחה");
-        if (pee) actions.push("פיפי");
-        if (poo) actions.push("קקי");
-        if (grass) actions.push("שיחק בדשא");
-        if (excitedPee) actions.push("פיפי התרגשות");
+        const checkedKeys = eventKeys.filter(key => {
+            const cb = document.getElementById(eventCheckboxIds[key]);
+            return cb && cb.checked;
+        });
 
-        if (actions.length === 0) {
+        if (checkedKeys.length === 0) {
             alert("אנא בחר לפחות פעולה אחת!");
             return;
         }
@@ -494,29 +593,54 @@
                 String(now.getMonth() + 1).padStart(2, '0') + '-' +
                 String(now.getDate()).padStart(2, '0');
         }
-        const dateStr = `${datePart} ${reportTime}`;
 
-        let details = actions.join(" + ");
-        if (walk && (walkStart || walkEnd)) {
-            details += ` [🕐 ${walkStart || '?'} - ${walkEnd || '?'}]`;
-        }
-        if (notes) details += ` (${notes})`;
+        // Group checked activities by their resolved time (per-event override, or the
+        // general report time as fallback) so activities logged at different times
+        // become separate entries, each accurate for "last X ago" calculations.
+        const groups = {}; // time -> array of event keys
+        checkedKeys.forEach(key => {
+            const overrideInput = document.getElementById('eventTime_' + key);
+            const resolvedTime = (overrideInput && overrideInput.value) ? overrideInput.value : reportTime;
+            if (!groups[resolvedTime]) groups[resolvedTime] = [];
+            groups[resolvedTime].push(key);
+        });
 
-        const entry = {
-            date: dateStr,
-            user: user,
-            details: details,
-            location: (pee || poo || excitedPee) ? location : ""
-        };
+        const entries = Object.keys(groups).sort().map(time => {
+            const keys = groups[time];
+            let details = keys.map(k => eventLabels[k]).join(" + ");
+            if (keys.includes('walk') && (walkStart || walkEnd)) {
+                details += ` [🕐 ${walkStart || '?'} - ${walkEnd || '?'}]`;
+            }
+            if (notes) details += ` (${notes})`;
+
+            const needsLocation = keys.includes('pee') || keys.includes('poo') || keys.includes('excitedpee');
+
+            return {
+                date: `${datePart} ${time}`,
+                user: user,
+                details: details,
+                location: needsLocation ? location : ""
+            };
+        });
 
         submitBtn.disabled = true;
         submitBtn.innerText = editingKey ? 'מעדכן...' : 'שומר...';
 
         try {
-            if (editingKey) {
-                await window.fb.set(window.fb.childRef(editingKey), entry);
+            if (editingKey && entries.length === 1) {
+                // Single result, same as before - overwrite in place to keep its position/key
+                await window.fb.set(window.fb.childRef(editingKey), entries[0]);
+            } else if (editingKey && entries.length > 1) {
+                // Editing turned into multiple time-separated entries - replace the
+                // original single entry with the new set
+                await window.fb.remove(window.fb.childRef(editingKey));
+                for (const entry of entries) {
+                    await window.fb.push(window.fb.logsRef, entry);
+                }
             } else {
-                await window.fb.push(window.fb.logsRef, entry);
+                for (const entry of entries) {
+                    await window.fb.push(window.fb.logsRef, entry);
+                }
             }
             // onValue listener will update the UI automatically for everyone
             resetForm();
@@ -558,6 +682,14 @@
             btn.classList.toggle('active', isOn);
         });
 
+        // Per-event time overrides always start blank on edit - the entry's single
+        // stored time becomes the general "שעת הדיווח" value above
+        eventKeys.forEach(key => {
+            const input = document.getElementById('eventTime_' + key);
+            if (input) input.value = '';
+        });
+        updatePerEventPanel();
+
         document.getElementById('walkTimes').classList.toggle('show', parsed.actions.walk);
         document.getElementById('walkStart').value = parsed.walkStart;
         document.getElementById('walkEnd').value = parsed.walkEnd;
@@ -589,6 +721,14 @@
         document.getElementById('reportTime').value = currentTimeHHMM();
         document.getElementById('location').value = 'בחוץ / ברחוב';
 
+        eventKeys.forEach(key => {
+            const input = document.getElementById('eventTime_' + key);
+            if (input) input.value = '';
+        });
+        updatePerEventPanel();
+
+        reportTimeManuallySet = false;
+
         document.getElementById('formTitle').innerText = '➕ דיווח חדש';
         document.getElementById('submitBtn').innerText = 'שמור דיווח 🚀';
         document.getElementById('cancelEditBtn').style.display = 'none';
@@ -601,6 +741,7 @@
         if (logs.length === 0) {
             logsContainer.innerHTML = '<div style="text-align:center; color:#888;">אין דיווחים להצגה</div>';
             updateDashboard();
+            renderDailyStats();
             return;
         }
 
@@ -629,6 +770,7 @@
         });
 
         updateDashboard();
+        renderDailyStats();
     }
 
     function parseLogDate(dateStr) {
@@ -666,6 +808,18 @@
                then.getDate() === now.getDate();
     }
 
+    // For a walk entry, "when did it happen" should reflect the walk's end time if one
+    // was given, since that's when the dog actually came back in - otherwise fall back
+    // to the time the report itself was logged at.
+    function walkEffectiveDate(log) {
+        const parsed = parseDetails(log.details);
+        if (parsed.walkEnd) {
+            const datePart = log.date.split(' ')[0];
+            return `${datePart} ${parsed.walkEnd}`;
+        }
+        return log.date;
+    }
+
     function updateDashboard() {
         const todayLogs = logs.filter(l => isToday(l.date));
 
@@ -674,7 +828,7 @@
 
         const sorted = [...logs].sort((a, b) => b.date.localeCompare(a.date));
         const lastWalk = sorted.find(l => l.details.includes('טיול'));
-        document.getElementById('lastWalkTime').innerText = lastWalk ? timeAgoText(lastWalk.date) : '--';
+        document.getElementById('lastWalkTime').innerText = lastWalk ? timeAgoText(walkEffectiveDate(lastWalk)) : '--';
 
         const lastMeal = sorted.find(l => l.details.includes('ארוחה'));
         document.getElementById('lastMealTime').innerText = lastMeal ? timeAgoText(lastMeal.date) : '--';
@@ -686,11 +840,65 @@
         document.getElementById('lastPooTime').innerText = lastPoo ? timeAgoText(lastPoo.date) : '--';
     }
 
+    function renderDailyStats() {
+        const container = document.getElementById('statsList');
+        container.innerHTML = '';
+
+        if (logs.length === 0) {
+            container.innerHTML = '<div style="text-align:center; color:#888;">אין עדיין נתונים</div>';
+            return;
+        }
+
+        // Group entries by calendar day
+        const byDay = {}; // "YYYY-MM-DD" -> { walks: n, accidents: n }
+        logs.forEach(l => {
+            const day = l.date.split(' ')[0];
+            if (!byDay[day]) byDay[day] = { walks: 0, accidents: 0 };
+            if (l.details.includes('טיול')) byDay[day].walks++;
+            if (l.location.includes('בית') || l.location.includes('משטחים') || l.location.includes('מרפסת')) byDay[day].accidents++;
+        });
+
+        const days = Object.keys(byDay).sort().reverse().slice(0, 30); // most recent 30 days
+
+        days.forEach(day => {
+            const stats = byDay[day];
+            const row = document.createElement('div');
+            row.className = 'stat-row';
+            row.innerHTML = `
+                <div class="stat-date">${day}</div>
+                <div class="stat-nums">
+                    <span class="stat-badge">🦮 ${stats.walks} טיולים</span>
+                    <span class="stat-badge${stats.accidents > 0 ? ' accident' : ''}">⚠️ ${stats.accidents} פספוסים</span>
+                </div>
+            `;
+            container.appendChild(row);
+        });
+    }
+
     // Keep the "time ago" labels fresh even if no new logs come in
     setInterval(() => { if (logs.length) updateDashboard(); }, 60000);
 
     // Pre-fill the report time with "now" as soon as the page loads
     document.getElementById('reportTime').value = currentTimeHHMM();
+
+    // If the user manually changes the time, stop auto-refreshing it for them
+    document.getElementById('reportTime').addEventListener('input', () => {
+        reportTimeManuallySet = true;
+    });
+
+    // If the app was left open in the background and the person comes back later to
+    // report something, refresh the suggested time to "now" instead of leaving it
+    // stuck at whenever the tab was last opened - but only if they haven't already
+    // set a time themselves, and they're not in the middle of editing an existing entry.
+    function refreshReportTimeIfStale() {
+        if (!editingKey && !reportTimeManuallySet) {
+            document.getElementById('reportTime').value = currentTimeHHMM();
+        }
+    }
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') refreshReportTimeIfStale();
+    });
+    window.addEventListener('focus', refreshReportTimeIfStale);
 
     // Wait for the Firebase module script to finish setting window.fb
     function waitForFirebase(cb) {
