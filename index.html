@@ -332,6 +332,9 @@
                     <label class="checkbox-btn" onclick="toggleActive(this)">
                         <input type="checkbox" id="actGrass"> 🌱 שיחק בדשא
                     </label>
+                    <label class="checkbox-btn" onclick="toggleActive(this)">
+                        <input type="checkbox" id="actExcitedPee"> 😅 פיפי התרגשות
+                    </label>
                 </div>
             </div>
 
@@ -427,7 +430,8 @@
                 food: actionsList.includes('ארוחה'),
                 pee: actionsList.includes('פיפי'),
                 poo: actionsList.includes('קקי'),
-                grass: actionsList.includes('שיחק בדשא')
+                grass: actionsList.includes('שיחק בדשא'),
+                excitedpee: actionsList.includes('פיפי התרגשות')
             }
         };
     }
@@ -452,6 +456,7 @@
         const pee = document.getElementById('actPee').checked;
         const poo = document.getElementById('actPoo').checked;
         const grass = document.getElementById('actGrass').checked;
+        const excitedPee = document.getElementById('actExcitedPee').checked;
         const location = document.getElementById('location').value;
         const notes = document.getElementById('notes').value;
         const walkStart = document.getElementById('walkStart').value;
@@ -464,6 +469,7 @@
         if (pee) actions.push("פיפי");
         if (poo) actions.push("קקי");
         if (grass) actions.push("שיחק בדשא");
+        if (excitedPee) actions.push("פיפי התרגשות");
 
         if (actions.length === 0) {
             alert("אנא בחר לפחות פעולה אחת!");
@@ -500,7 +506,7 @@
             date: dateStr,
             user: user,
             details: details,
-            location: (pee || poo) ? location : ""
+            location: (pee || poo || excitedPee) ? location : ""
         };
 
         submitBtn.disabled = true;
