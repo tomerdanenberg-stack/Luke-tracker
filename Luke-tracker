@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ניהול לו"ז ומעקב כלב - Luke Tracker</title>
+    <style>
+        :root {
+            --primary: #4a90e2;
+            --success: #2ecc71;
+            --warning: #f1c40f;
+            --danger: #e74c3c;
+            --bg: #f5f7fa;
+            --card-bg: #ffffff;
+            --text: #333333;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 15px;
+            direction: rtl;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            background: var(--primary);
+            color: white;
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        header h1 { margin: 0; font-size: 1.5rem; }
+        header p { margin: 5px 0 0 0; opacity: 0.9; font-size: 0.9rem; }
+
+        .sync-status {
+            font-size: 0.75rem;
+            margin-top: 6px;
+            opacity: 0.85;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .dash-card {
+            background: var(--card-bg);
+            padding: 12px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            border-top: 4px solid var(--primary);
+        }
+
+        .dash-card.warning { border-color: var(--danger); }
+        .dash-card .number { font-size: 1.4rem; font-weight: bold; margin: 5px 0; color: var(--primary); }
+        .dash-card.warning .number { color: var(--danger); }
+
+        .form-card {
+            background: var(--card-bg);
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        .form-card h2 { margin-top: 0; font-size: 1.2rem; border-bottom: 2px solid var(--bg); padding-bottom: 8px; }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.9rem; }
+
+        select, input, button {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 1rem;
+        }
+
+        .checkbox-group {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .checkbox-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            user-select: none;
+            font-weight: bold;
+        }
+
+        .checkbox-btn input { display: none; }
+        .checkbox-btn.active {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-submit {
+            background: var(--success);
+            color: white;
+            border: none;
+            font-weight: bold;
+            font-size: 1.1rem;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: background 0.2s;
+        }
+
+        .btn-submit:hover { background: #27ae60; }
+        .btn-submit:disabled { background: #aaa; cursor: not-allowed; }
+
+        .logs-section {
+            background: var(--card-bg);
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .log-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            font-size: 0.95rem;
+        }
+
+        .log-item:last-child { border-bottom: none; }
+        .log-user { font-weight: bold; color: var(--primary); }
+        .log-time { color: #777; font-size: 0.8rem; }
+
+        .delete-btn {
+            background: transparent;
+            border: none;
+            color: var(--danger);
+            cursor: pointer;
+            font-size: 1.1rem;
+            padding: 4px 8px;
+            margin-right: 8px;
+            border-radius: 4px;
+            width: auto;
+        }
+
+        .delete-btn:hover {
+            background: #fde8e8;
+        }
+
+        .edit-btn {
+            background: transparent;
+            border: none;
+            color: var(--primary);
+            cursor: pointer;
+            font-size: 1.1rem;
+            padding: 4px 8px;
+            margin-right: 4px;
+            border-radius: 4px;
+            width: auto;
+        }
+
+        .edit-btn:hover {
+            background: #eef3fb;
+        }
+
+        .loading-overlay {
+            text-align: center;
+            padding: 20px;
+            color: #888;
+        }
+
+        .refresh-btn {
+            background: #eef3fb;
+            color: var(--primary);
+            border: 1px solid #d5e3f7;
+            font-weight: bold;
+            width: auto;
+            padding: 8px 14px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+
+        .walk-times {
+            display: none;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            background: #f0f6ff;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+
+        .walk-times.show { display: grid; }
+
+        .walk-times label { font-size: 0.8rem; margin-bottom: 3px; }
+    </style>
+
+    <!-- Firebase -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+        import { getDatabase, ref, push, onValue, remove, set } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
+
+        // === Your firebaseConfig ===
+        const firebaseConfig = {
+            apiKey: "AIzaSyBELNoIFdEqkAL9LS9MAJCiNcMo08Mm5lA",
+            authDomain: "luke-pipi-tracker.firebaseapp.com",
+            databaseURL: "https://luke-pipi-tracker-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "luke-pipi-tracker",
+            storageBucket: "luke-pipi-tracker.firebasestorage.app",
+            messagingSenderId: "799214015733",
+            appId: "1:799214015733:web:88e25d34a88d88274761bc"
+        };
+        // ===========================
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const logsRef = ref(db, 'logs');
+
+        // Expose to the rest of the page (this file uses plain <script>, not modules, below)
+        window.fb = {
+            db, logsRef, push, onValue, remove, ref, set,
+            childRef: (key) => ref(db, 'logs/' + key)
+        };
+    </script>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>🐾 Luke Tracker</h1>
+        <p>ניהול ארוחות, טיולים וצרכים של לוק</p>
+        <div class="sync-status" id="syncStatus">מתחבר ל-Firebase...</div>
+    </header>
+
+    <div class="dashboard">
+        <div class="dash-card">
+            <div>טיול אחרון לפני</div>
+            <div class="number" id="lastWalkTime">--</div>
+        </div>
+        <div class="dash-card">
+            <div>ארוחה אחרונה לפני</div>
+            <div class="number" id="lastMealTime">--</div>
+        </div>
+        <div class="dash-card warning">
+            <div>פספוסים היום (בית/משטחים)</div>
+            <div class="number" id="accidentsToday">0</div>
+        </div>
+        <div class="dash-card">
+            <div>סה"כ יציאות היום</div>
+            <div class="number" id="walksToday">0</div>
+        </div>
+    </div>
+
+    <div class="form-card">
+        <h2 id="formTitle">➕ דיווח חדש</h2>
+        <form id="dogForm">
+            <div class="form-group">
+                <label>מדווח/ת:</label>
+                <select id="reporter" required>
+                    <option value="תומר">תומר</option>
+                    <option value="אמא">אמא</option>
+                    <option value="אבא">אבא</option>
+                    <option value="תני">תני</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>שעת הדיווח:</label>
+                <input type="time" id="reportTime" required>
+            </div>
+
+            <div class="form-group">
+                <label>מה היה לנו?</label>
+                <div class="checkbox-group">
+                    <label class="checkbox-btn" onclick="toggleActive(this)">
+                        <input type="checkbox" id="actWalk"> 🦮 טיול
+                    </label>
+                    <label class="checkbox-btn" onclick="toggleActive(this)">
+                        <input type="checkbox" id="actFood"> 🍖 ארוחה
+                    </label>
+                    <label class="checkbox-btn" onclick="toggleActive(this)">
+                        <input type="checkbox" id="actPee"> 💦 פיפי
+                    </label>
+                    <label class="checkbox-btn" onclick="toggleActive(this)">
+                        <input type="checkbox" id="actPoo"> 💩 קקי
+                    </label>
+                    <label class="checkbox-btn" onclick="toggleActive(this)">
+                        <input type="checkbox" id="actGrass"> 🌱 שיחק בדשא
+                    </label>
+                </div>
+            </div>
+
+            <div class="walk-times" id="walkTimes">
+                <div>
+                    <label>שעת התחלה</label>
+                    <input type="time" id="walkStart">
+                </div>
+                <div>
+                    <label>שעת סיום</label>
+                    <input type="time" id="walkEnd">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>מיקום הצרכים (אם היו):</label>
+                <select id="location">
+                    <option value="בחוץ / ברחוב">🌳 בחוץ / ברחוב</option>
+                    <option value="במרפסת">חלון/מרפסת 🪴</option>
+                    <option value="במשטחים">משטחים 🏠</option>
+                    <option value="בבית">בתוך הבית ❌</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>הערות נוספות:</label>
+                <input type="text" id="notes" placeholder="למשל: סירב ללכת, אכל חריף...">
+            </div>
+
+            <button type="submit" class="btn-submit" id="submitBtn">שמור דיווח 🚀</button>
+            <button type="button" class="refresh-btn" id="cancelEditBtn" style="display:none; margin-top:8px;" onclick="cancelEdit()">✖️ בטל עריכה</button>
+        </form>
+    </div>
+
+    <div class="logs-section">
+        <h2>📜 היסטוריית דיווחים אחרונים</h2>
+        <div id="logsList"><div class="loading-overlay">טוען...</div></div>
+    </div>
+</div>
+
+<script>
+    const initialHistory = {
+        "seed1": { date: "2026-08-08 23:55", user: "אבא", details: "טיול ופיפי בחניה", location: "בחוץ" },
+        "seed2": { date: "2026-08-08 22:04", user: "תומר", details: "פיפי קקי מרפסת", location: "במרפסת" },
+        "seed3": { date: "2026-08-08 21:45", user: "אבא", details: "טיול פיפי", location: "בחוץ" },
+        "seed4": { date: "2026-08-08 19:22", user: "תומר", details: "טיול פיפי", location: "בחוץ" },
+        "seed5": { date: "2026-08-08 16:31", user: "תומר", details: "ארוחת צהריים", location: "" },
+        "seed6": { date: "2026-08-08 15:35", user: "תומר", details: "טיול פיפי", location: "בחוץ" },
+        "seed7": { date: "2026-08-08 07:30", user: "אמא", details: "טיול בלי כלום + ארוחת בוקר", location: "בחוץ" }
+    };
+
+    let logs = []; // array of {key, date, user, details, location}
+    let firstSnapshot = true;
+    let editingKey = null;
+
+    function setStatus(msg, isError) {
+        const el = document.getElementById('syncStatus');
+        el.innerText = msg;
+        el.style.color = isError ? '#ffdddd' : '';
+    }
+
+    function currentTimeHHMM() {
+        const now = new Date();
+        return String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    }
+
+    // Reconstructs the structured fields from a details string built by this app,
+    // so old and new entries can both be loaded back into the edit form.
+    function parseDetails(details) {
+        let s = details || '';
+        let notes = '';
+        let walkStart = '';
+        let walkEnd = '';
+
+        const notesMatch = s.match(/\s\(([^)]*)\)\s*$/);
+        if (notesMatch) {
+            notes = notesMatch[1];
+            s = s.slice(0, notesMatch.index);
+        }
+
+        const timeMatch = s.match(/\s\[🕐\s*(.*?)\s*-\s*(.*?)\]\s*$/);
+        if (timeMatch) {
+            walkStart = timeMatch[1] === '?' ? '' : timeMatch[1];
+            walkEnd = timeMatch[2] === '?' ? '' : timeMatch[2];
+            s = s.slice(0, timeMatch.index);
+        }
+
+        const actionsList = s.split(' + ').map(a => a.trim()).filter(Boolean);
+        return {
+            notes, walkStart, walkEnd,
+            actions: {
+                walk: actionsList.includes('טיול'),
+                food: actionsList.includes('ארוחה'),
+                pee: actionsList.includes('פיפי'),
+                poo: actionsList.includes('קקי'),
+                grass: actionsList.includes('שיחק בדשא')
+            }
+        };
+    }
+
+    function toggleActive(el) {
+        const checkbox = el.querySelector('input');
+        checkbox.checked = !checkbox.checked;
+        el.classList.toggle('active', checkbox.checked);
+
+        if (checkbox.id === 'actWalk') {
+            document.getElementById('walkTimes').classList.toggle('show', checkbox.checked);
+        }
+    }
+
+    document.getElementById('dogForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const submitBtn = document.getElementById('submitBtn');
+        const user = document.getElementById('reporter').value;
+        const walk = document.getElementById('actWalk').checked;
+        const food = document.getElementById('actFood').checked;
+        const pee = document.getElementById('actPee').checked;
+        const poo = document.getElementById('actPoo').checked;
+        const grass = document.getElementById('actGrass').checked;
+        const location = document.getElementById('location').value;
+        const notes = document.getElementById('notes').value;
+        const walkStart = document.getElementById('walkStart').value;
+        const walkEnd = document.getElementById('walkEnd').value;
+        const reportTime = document.getElementById('reportTime').value;
+
+        let actions = [];
+        if (walk) actions.push("טיול");
+        if (food) actions.push("ארוחה");
+        if (pee) actions.push("פיפי");
+        if (poo) actions.push("קקי");
+        if (grass) actions.push("שיחק בדשא");
+
+        if (actions.length === 0) {
+            alert("אנא בחר לפחות פעולה אחת!");
+            return;
+        }
+
+        if (!reportTime) {
+            alert("אנא בחר שעה לדיווח!");
+            return;
+        }
+
+        // Use today's date when creating a new entry; when editing, keep the entry's
+        // original date and only change the time - so editing doesn't move it to a new day.
+        let datePart;
+        if (editingKey) {
+            const existing = logs.find(l => l.key === editingKey);
+            datePart = existing ? existing.date.split(' ')[0] : null;
+        }
+        if (!datePart) {
+            const now = new Date();
+            datePart = now.getFullYear() + '-' +
+                String(now.getMonth() + 1).padStart(2, '0') + '-' +
+                String(now.getDate()).padStart(2, '0');
+        }
+        const dateStr = `${datePart} ${reportTime}`;
+
+        let details = actions.join(" + ");
+        if (walk && (walkStart || walkEnd)) {
+            details += ` [🕐 ${walkStart || '?'} - ${walkEnd || '?'}]`;
+        }
+        if (notes) details += ` (${notes})`;
+
+        const entry = {
+            date: dateStr,
+            user: user,
+            details: details,
+            location: (pee || poo) ? location : ""
+        };
+
+        submitBtn.disabled = true;
+        submitBtn.innerText = editingKey ? 'מעדכן...' : 'שומר...';
+
+        try {
+            if (editingKey) {
+                await window.fb.set(window.fb.childRef(editingKey), entry);
+            } else {
+                await window.fb.push(window.fb.logsRef, entry);
+            }
+            // onValue listener will update the UI automatically for everyone
+            resetForm();
+        } catch (err) {
+            console.error('Firebase save error:', err);
+            alert('שגיאה בשמירה - בדוק חיבור ונסה שוב. ודא שה-firebaseConfig הוגדר נכון.');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerText = editingKey ? 'עדכן דיווח ✏️' : 'שמור דיווח 🚀';
+        }
+    });
+
+    async function deleteLog(key) {
+        if (!confirm("בטוח שברצונך למחוק את הדיווח הזה?")) return;
+        try {
+            await window.fb.remove(window.fb.childRef(key));
+        } catch (err) {
+            console.error('Firebase delete error:', err);
+            alert('שגיאה במחיקה - נסה שוב');
+        }
+    }
+
+    function editLog(key) {
+        const log = logs.find(l => l.key === key);
+        if (!log) return;
+
+        editingKey = key;
+
+        const parsed = parseDetails(log.details);
+
+        document.getElementById('reporter').value = log.user;
+        document.getElementById('reportTime').value = log.date.split(' ')[1] || currentTimeHHMM();
+
+        document.querySelectorAll('.checkbox-btn').forEach(btn => {
+            const cb = btn.querySelector('input');
+            const key = cb.id.replace('act', '').toLowerCase(); // actWalk -> walk
+            const isOn = !!parsed.actions[key];
+            cb.checked = isOn;
+            btn.classList.toggle('active', isOn);
+        });
+
+        document.getElementById('walkTimes').classList.toggle('show', parsed.actions.walk);
+        document.getElementById('walkStart').value = parsed.walkStart;
+        document.getElementById('walkEnd').value = parsed.walkEnd;
+        document.getElementById('location').value = log.location || 'בחוץ / ברחוב';
+        document.getElementById('notes').value = parsed.notes;
+
+        document.getElementById('formTitle').innerText = '✏️ עריכת דיווח';
+        document.getElementById('submitBtn').innerText = 'עדכן דיווח ✏️';
+        document.getElementById('cancelEditBtn').style.display = 'block';
+
+        document.querySelector('.form-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function cancelEdit() {
+        editingKey = null;
+        resetForm();
+    }
+
+    function resetForm() {
+        editingKey = null;
+        document.querySelectorAll('.checkbox-btn').forEach(btn => {
+            btn.classList.remove('active');
+            btn.querySelector('input').checked = false;
+        });
+        document.getElementById('notes').value = '';
+        document.getElementById('walkStart').value = '';
+        document.getElementById('walkEnd').value = '';
+        document.getElementById('walkTimes').classList.remove('show');
+        document.getElementById('reportTime').value = currentTimeHHMM();
+        document.getElementById('location').value = 'בחוץ / ברחוב';
+
+        document.getElementById('formTitle').innerText = '➕ דיווח חדש';
+        document.getElementById('submitBtn').innerText = 'שמור דיווח 🚀';
+        document.getElementById('cancelEditBtn').style.display = 'none';
+    }
+
+    function renderLogs() {
+        const logsContainer = document.getElementById('logsList');
+        logsContainer.innerHTML = '';
+
+        if (logs.length === 0) {
+            logsContainer.innerHTML = '<div style="text-align:center; color:#888;">אין דיווחים להצגה</div>';
+            updateDashboard();
+            return;
+        }
+
+        // Newest first, cap what we display to keep it fast
+        const sorted = [...logs].sort((a, b) => b.date.localeCompare(a.date));
+        const trimmed = sorted.slice(0, 200);
+
+        trimmed.forEach(log => {
+            const item = document.createElement('div');
+            item.className = 'log-item';
+
+            item.innerHTML = `
+                <div>
+                    <span class="log-user">${log.user}</span>: ${log.details}
+                    ${log.location ? `<br><small style="color:#666;">📍 ${log.location}</small>` : ''}
+                </div>
+                <div style="display: flex; align-items: center;">
+                    <div class="log-time" style="text-align: left;">
+                        ${log.date.split(' ')[1]}<br><small>${log.date.split(' ')[0].slice(5)}</small>
+                    </div>
+                    <button class="edit-btn" onclick="editLog('${log.key}')" title="ערוך דיווח">✏️</button>
+                    <button class="delete-btn" onclick="deleteLog('${log.key}')" title="מחק דיווח">🗑️</button>
+                </div>
+            `;
+            logsContainer.appendChild(item);
+        });
+
+        updateDashboard();
+    }
+
+    function parseLogDate(dateStr) {
+        // dateStr format: "YYYY-MM-DD HH:MM"
+        const [d, t] = dateStr.split(' ');
+        const [y, mo, day] = d.split('-').map(Number);
+        const [h, mi] = t.split(':').map(Number);
+        return new Date(y, mo - 1, day, h, mi);
+    }
+
+    function timeAgoText(dateStr) {
+        const then = parseLogDate(dateStr);
+        const now = new Date();
+        let diffMin = Math.floor((now - then) / 60000);
+        if (diffMin < 0) diffMin = 0;
+
+        if (diffMin < 1) return 'ממש עכשיו';
+        if (diffMin < 60) return `לפני ${diffMin} דק'`;
+
+        const hours = Math.floor(diffMin / 60);
+        const mins = diffMin % 60;
+        if (hours < 24) {
+            return mins > 0 ? `לפני ${hours} ש' ו-${mins} דק'` : `לפני ${hours} ש'`;
+        }
+
+        const days = Math.floor(hours / 24);
+        return `לפני ${days} ימים`;
+    }
+
+    function isToday(dateStr) {
+        const then = parseLogDate(dateStr);
+        const now = new Date();
+        return then.getFullYear() === now.getFullYear() &&
+               then.getMonth() === now.getMonth() &&
+               then.getDate() === now.getDate();
+    }
+
+    function updateDashboard() {
+        const todayLogs = logs.filter(l => isToday(l.date));
+
+        document.getElementById('walksToday').innerText = todayLogs.filter(l => l.details.includes('טיול')).length;
+        document.getElementById('accidentsToday').innerText = todayLogs.filter(l => l.location.includes('בית') || l.location.includes('משטחים') || l.location.includes('מרפסת')).length;
+
+        const sorted = [...logs].sort((a, b) => b.date.localeCompare(a.date));
+        const lastWalk = sorted.find(l => l.details.includes('טיול'));
+        document.getElementById('lastWalkTime').innerText = lastWalk ? timeAgoText(lastWalk.date) : '--';
+
+        const lastMeal = sorted.find(l => l.details.includes('ארוחה'));
+        document.getElementById('lastMealTime').innerText = lastMeal ? timeAgoText(lastMeal.date) : '--';
+    }
+
+    // Keep the "time ago" labels fresh even if no new logs come in
+    setInterval(() => { if (logs.length) updateDashboard(); }, 60000);
+
+    // Pre-fill the report time with "now" as soon as the page loads
+    document.getElementById('reportTime').value = currentTimeHHMM();
+
+    // Wait for the Firebase module script to finish setting window.fb
+    function waitForFirebase(cb) {
+        if (window.fb) { cb(); } else { setTimeout(() => waitForFirebase(cb), 50); }
+    }
+
+    waitForFirebase(() => {
+        setStatus('טוען נתונים משותפים...');
+
+        window.fb.onValue(window.fb.logsRef, (snapshot) => {
+            const val = snapshot.val();
+            if (val === null && firstSnapshot) {
+                // Empty database - seed it once
+                firstSnapshot = false;
+                Object.keys(initialHistory).forEach(k => {
+                    window.fb.push(window.fb.logsRef, initialHistory[k]);
+                });
+                return; // the push above will trigger onValue again
+            }
+            firstSnapshot = false;
+            logs = val ? Object.keys(val).map(key => ({ key, ...val[key] })) : [];
+            setStatus('✓ מסונכרן בזמן אמת - כולם רואים את אותם הנתונים');
+            renderLogs();
+        }, (err) => {
+            console.error('Firebase read error:', err);
+            setStatus('⚠️ שגיאת חיבור ל-Firebase - בדוק את ה-config', true);
+        });
+    });
+</script>
+
+</body>
+</html>
