@@ -387,10 +387,6 @@
 
             <div class="per-event-times" id="perEventTimes">
                 <div style="font-size:0.85rem; font-weight:bold; margin-bottom:8px;">שעה שונה לכל אירוע (אופציונלי - אחרת נשתמש בשעת הדיווח הכללית):</div>
-                <div class="per-event-row" id="peRow_walk" style="display:none;">
-                    <label>🦮 טיול</label>
-                    <input type="time" id="eventTime_walk">
-                </div>
                 <div class="per-event-row" id="peRow_food" style="display:none;">
                     <label>🍖 ארוחה</label>
                     <input type="time" id="eventTime_food">
@@ -405,7 +401,9 @@
                 </div>
                 <div class="per-event-row" id="peRow_grass" style="display:none;">
                     <label>🌱 שיחק בדשא</label>
-                    <input type="time" id="eventTime_grass">
+                    <input type="time" id="eventTime_grass_start" style="max-width:90px;" title="שעת התחלה">
+                    <span style="font-size:0.8rem;">עד</span>
+                    <input type="time" id="eventTime_grass_end" style="max-width:90px;" title="שעת סיום">
                 </div>
                 <div class="per-event-row" id="peRow_excitedpee" style="display:none;">
                     <label>😅 פיפי התרגשות</label>
@@ -450,7 +448,7 @@
     </div>
 
     <div class="logs-section" style="margin-top: 20px;">
-        <h2>📊 סטטיסטיקה יומית</h2>
+        <h2>📊 סטטיסטיקה שבועית</h2>
         <div id="statsList"><div class="loading-overlay">טוען...</div></div>
     </div>
 </div>
@@ -487,8 +485,8 @@
     function parseDetails(details) {
         let s = details || '';
         let notes = '';
-        let walkStart = '';
-        let walkEnd = '';
+        let rangeStart = '';
+        let rangeEnd = '';
 
         const notesMatch = s.match(/\s\(([^)]*)\)\s*$/);
         if (notesMatch) {
@@ -498,14 +496,14 @@
 
         const timeMatch = s.match(/\s\[🕐\s*(.*?)\s*-\s*(.*?)\]\s*$/);
         if (timeMatch) {
-            walkStart = timeMatch[1] === '?' ? '' : timeMatch[1];
-            walkEnd = timeMatch[2] === '?' ? '' : timeMatch[2];
+            rangeStart = timeMatch[1] === '?' ? '' : timeMatch[1];
+            rangeEnd = timeMatch[2] === '?' ? '' : timeMatch[2];
             s = s.slice(0, timeMatch.index);
         }
 
         const actionsList = s.split(' + ').map(a => a.trim()).filter(Boolean);
         return {
-            notes, walkStart, walkEnd,
+            notes, rangeStart, rangeEnd,
             actions: {
                 walk: actionsList.includes('טיול'),
                 food: actionsList.includes('ארוחה'),
@@ -597,10 +595,20 @@
         // Group checked activities by their resolved time (per-event override, or the
         // general report time as fallback) so activities logged at different times
         // become separate entries, each accurate for "last X ago" calculations.
+        const grassStart = document.getElementById('eventTime_grass_start').value;
+        const grassEnd = document.getElementById('eventTime_grass_end').value;
+
+        function resolveEventTime(key) {
+            if (key === 'grass') {
+                return grassEnd || grassStart || reportTime;
+            }
+            const overrideInput = document.getElementById('eventTime_' + key);
+            return (overrideInput && overrideInput.value) ? overrideInput.value : reportTime;
+        }
+
         const groups = {}; // time -> array of event keys
         checkedKeys.forEach(key => {
-            const overrideInput = document.getElementById('eventTime_' + key);
-            const resolvedTime = (overrideInput && overrideInput.value) ? overrideInput.value : reportTime;
+            const resolvedTime = resolveEventTime(key);
             if (!groups[resolvedTime]) groups[resolvedTime] = [];
             groups[resolvedTime].push(key);
         });
@@ -610,6 +618,8 @@
             let details = keys.map(k => eventLabels[k]).join(" + ");
             if (keys.includes('walk') && (walkStart || walkEnd)) {
                 details += ` [🕐 ${walkStart || '?'} - ${walkEnd || '?'}]`;
+            } else if (keys.includes('grass') && (grassStart || grassEnd)) {
+                details += ` [🕐 ${grassStart || '?'} - ${grassEnd || '?'}]`;
             }
             if (notes) details += ` (${notes})`;
 
@@ -688,11 +698,26 @@
             const input = document.getElementById('eventTime_' + key);
             if (input) input.value = '';
         });
+        document.getElementById('eventTime_grass_start').value = '';
+        document.getElementById('eventTime_grass_end').value = '';
         updatePerEventPanel();
 
         document.getElementById('walkTimes').classList.toggle('show', parsed.actions.walk);
-        document.getElementById('walkStart').value = parsed.walkStart;
-        document.getElementById('walkEnd').value = parsed.walkEnd;
+
+        // The time-range bracket in the details could belong to either walk or grass -
+        // route it to whichever activity this entry actually has.
+        if (parsed.actions.walk) {
+            document.getElementById('walkStart').value = parsed.rangeStart;
+            document.getElementById('walkEnd').value = parsed.rangeEnd;
+        } else {
+            document.getElementById('walkStart').value = '';
+            document.getElementById('walkEnd').value = '';
+        }
+        if (parsed.actions.grass && !parsed.actions.walk) {
+            document.getElementById('eventTime_grass_start').value = parsed.rangeStart;
+            document.getElementById('eventTime_grass_end').value = parsed.rangeEnd;
+        }
+
         document.getElementById('location').value = log.location || 'בחוץ / ברחוב';
         document.getElementById('notes').value = parsed.notes;
 
@@ -725,6 +750,8 @@
             const input = document.getElementById('eventTime_' + key);
             if (input) input.value = '';
         });
+        document.getElementById('eventTime_grass_start').value = '';
+        document.getElementById('eventTime_grass_end').value = '';
         updatePerEventPanel();
 
         reportTimeManuallySet = false;
@@ -745,8 +772,25 @@
             return;
         }
 
+        // Only show today's and yesterday's entries in this list (by the 4am-boundary
+        // "business day") - older entries stay saved in Firebase for the statistics
+        // below, just hidden here to keep the daily view focused and short.
+        const todayBizDay = businessDayOfDate(new Date());
+        const yesterdayBizDay = businessDayOfDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
+        const visibleLogs = logs.filter(l => {
+            const day = businessDayOfLogDate(l.date);
+            return day === todayBizDay || day === yesterdayBizDay;
+        });
+
+        if (visibleLogs.length === 0) {
+            logsContainer.innerHTML = '<div style="text-align:center; color:#888;">אין דיווחים מהיומיים האחרונים</div>';
+            updateDashboard();
+            renderDailyStats();
+            return;
+        }
+
         // Newest first, cap what we display to keep it fast
-        const sorted = [...logs].sort((a, b) => b.date.localeCompare(a.date));
+        const sorted = [...visibleLogs].sort((a, b) => b.date.localeCompare(a.date));
         const trimmed = sorted.slice(0, 200);
 
         trimmed.forEach(log => {
@@ -800,22 +844,34 @@
         return `לפני ${days} ימים`;
     }
 
+    // The "day" for counting/grouping purposes runs from 4:00 AM to 3:59 AM the next
+    // calendar day - so a walk logged at 00:13 still counts as part of "yesterday
+    // evening" instead of confusingly starting a new day's count at midnight.
+    function businessDayOfDate(dateObj) {
+        const shifted = new Date(dateObj.getTime() - 4 * 60 * 60 * 1000);
+        return shifted.getFullYear() + '-' +
+            String(shifted.getMonth() + 1).padStart(2, '0') + '-' +
+            String(shifted.getDate()).padStart(2, '0');
+    }
+
+    function businessDayOfLogDate(dateStr) {
+        return businessDayOfDate(parseLogDate(dateStr));
+    }
+
     function isToday(dateStr) {
-        const then = parseLogDate(dateStr);
-        const now = new Date();
-        return then.getFullYear() === now.getFullYear() &&
-               then.getMonth() === now.getMonth() &&
-               then.getDate() === now.getDate();
+        return businessDayOfLogDate(dateStr) === businessDayOfDate(new Date());
     }
 
     // For a walk entry, "when did it happen" should reflect the walk's end time if one
     // was given, since that's when the dog actually came back in - otherwise fall back
-    // to the time the report itself was logged at.
+    // to the time the report itself was logged at. The entry's stored date already has
+    // the correct calendar day (since the report time auto-syncs to the walk's end time
+    // when it's filled in), so no day adjustment is needed here.
     function walkEffectiveDate(log) {
         const parsed = parseDetails(log.details);
-        if (parsed.walkEnd) {
+        if (parsed.actions.walk && parsed.rangeEnd) {
             const datePart = log.date.split(' ')[0];
-            return `${datePart} ${parsed.walkEnd}`;
+            return `${datePart} ${parsed.rangeEnd}`;
         }
         return log.date;
     }
@@ -844,35 +900,79 @@
         const container = document.getElementById('statsList');
         container.innerHTML = '';
 
-        if (logs.length === 0) {
-            container.innerHTML = '<div style="text-align:center; color:#888;">אין עדיין נתונים</div>';
-            return;
-        }
-
-        // Group entries by calendar day
+        // Group entries by business day (4am-3:59am)
         const byDay = {}; // "YYYY-MM-DD" -> { walks: n, accidents: n }
         logs.forEach(l => {
-            const day = l.date.split(' ')[0];
+            const day = businessDayOfLogDate(l.date);
             if (!byDay[day]) byDay[day] = { walks: 0, accidents: 0 };
             if (l.details.includes('טיול')) byDay[day].walks++;
             if (l.location.includes('בית') || l.location.includes('משטחים') || l.location.includes('מרפסת')) byDay[day].accidents++;
         });
 
-        const days = Object.keys(byDay).sort().reverse().slice(0, 30); // most recent 30 days
+        // Always show the last 7 business days, oldest to newest, even if a day has
+        // zero entries, so the line chart has a consistent weekly x-axis.
+        const todayBiz = businessDayOfDate(new Date());
+        const [ty, tm, td] = todayBiz.split('-').map(Number);
+        const days = [];
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date(ty, tm - 1, td - i);
+            const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+            const stats = byDay[key] || { walks: 0, accidents: 0 };
+            const label = String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
+            days.push({ key, label, walks: stats.walks, accidents: stats.accidents });
+        }
 
-        days.forEach(day => {
-            const stats = byDay[day];
-            const row = document.createElement('div');
-            row.className = 'stat-row';
-            row.innerHTML = `
-                <div class="stat-date">${day}</div>
-                <div class="stat-nums">
-                    <span class="stat-badge">🦮 ${stats.walks} טיולים</span>
-                    <span class="stat-badge${stats.accidents > 0 ? ' accident' : ''}">⚠️ ${stats.accidents} פספוסים</span>
-                </div>
-            `;
-            container.appendChild(row);
-        });
+        container.innerHTML = buildWeeklyChartSVG(days);
+    }
+
+    function buildWeeklyChartSVG(days) {
+        const width = 320;
+        const height = 200;
+        const padTop = 15, padBottom = 30, padLeft = 28, padRight = 10;
+        const chartW = width - padLeft - padRight;
+        const chartH = height - padTop - padBottom;
+
+        const maxVal = Math.max(1, ...days.map(d => Math.max(d.walks, d.accidents)));
+        const stepX = days.length > 1 ? chartW / (days.length - 1) : 0;
+
+        function xFor(i) { return padLeft + i * stepX; }
+        function yFor(v) { return padTop + chartH - (v / maxVal) * chartH; }
+
+        function pathFor(key) {
+            return days.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(d[key]).toFixed(1)}`).join(' ');
+        }
+
+        function dotsFor(key, color) {
+            return days.map((d, i) =>
+                `<circle cx="${xFor(i).toFixed(1)}" cy="${yFor(d[key]).toFixed(1)}" r="3.5" fill="${color}" />`
+            ).join('');
+        }
+
+        const gridLines = [0, 0.25, 0.5, 0.75, 1].map(f => {
+            const y = padTop + chartH * (1 - f);
+            const val = Math.round(maxVal * f);
+            return `<line x1="${padLeft}" y1="${y.toFixed(1)}" x2="${width - padRight}" y2="${y.toFixed(1)}" stroke="#eee" stroke-width="1" />
+                    <text x="${padLeft - 5}" y="${(y + 3).toFixed(1)}" font-size="9" fill="#999" text-anchor="end">${val}</text>`;
+        }).join('');
+
+        const xLabels = days.map((d, i) =>
+            `<text x="${xFor(i).toFixed(1)}" y="${height - 8}" font-size="9" fill="#777" text-anchor="middle">${d.label}</text>`
+        ).join('');
+
+        return `
+            <svg viewBox="0 0 ${width} ${height}" style="width:100%; height:auto; direction:ltr;">
+                ${gridLines}
+                <path d="${pathFor('walks')}" fill="none" stroke="#4a90e2" stroke-width="2.5" />
+                ${dotsFor('walks', '#4a90e2')}
+                <path d="${pathFor('accidents')}" fill="none" stroke="#e74c3c" stroke-width="2.5" />
+                ${dotsFor('accidents', '#e74c3c')}
+                ${xLabels}
+            </svg>
+            <div style="display:flex; justify-content:center; gap:16px; margin-top:8px; font-size:0.8rem;">
+                <span><span style="display:inline-block; width:10px; height:10px; background:#4a90e2; border-radius:50%; margin-left:4px;"></span>טיולים</span>
+                <span><span style="display:inline-block; width:10px; height:10px; background:#e74c3c; border-radius:50%; margin-left:4px;"></span>פספוסים</span>
+            </div>
+        `;
     }
 
     // Keep the "time ago" labels fresh even if no new logs come in
@@ -884,6 +984,18 @@
     // If the user manually changes the time, stop auto-refreshing it for them
     document.getElementById('reportTime').addEventListener('input', () => {
         reportTimeManuallySet = true;
+    });
+
+    // When a walk's end time is filled in, sync the general report time to match it -
+    // so a report filed late (after the walk is already over) still reflects when
+    // things actually happened, not when the form was finally submitted. This only
+    // treats it as an automatic default, so it also counts as "manually set" going
+    // forward, preventing the background refresh from overwriting it later.
+    document.getElementById('walkEnd').addEventListener('input', function() {
+        if (this.value) {
+            document.getElementById('reportTime').value = this.value;
+            reportTimeManuallySet = true;
+        }
     });
 
     // If the app was left open in the background and the person comes back later to
