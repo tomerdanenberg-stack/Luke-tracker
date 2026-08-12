@@ -276,6 +276,14 @@
             flex: 1;
             padding: 6px;
         }
+
+        .sub-option-toggle {
+            background: #eef3fb;
+            border: 1px solid #d5e3f7;
+            padding: 8px 10px;
+            border-radius: 8px;
+            margin-top: 8px;
+        }
     </style>
 
     <!-- Firebase -->
@@ -381,6 +389,27 @@
                     </label>
                     <label class="checkbox-btn" onclick="toggleActive(this)">
                         <input type="checkbox" id="actExcitedPee"> 😅 פיפי התרגשות
+                    </label>
+                </div>
+
+                <div class="sub-option-toggle" id="mealTypeToggle" style="display:none;">
+                    <label style="font-size:0.85rem; font-weight:bold; display:block; margin-bottom:6px;">איזו ארוחה?</label>
+                    <select id="mealType">
+                        <option value="בוקר">🌅 בוקר</option>
+                        <option value="צהריים">☀️ צהריים</option>
+                        <option value="ערב">🌙 ערב</option>
+                    </select>
+                </div>
+
+                <div class="sub-option-toggle" id="nightPeeToggle" style="display:none;">
+                    <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; font-weight:normal; cursor:pointer;">
+                        <input type="checkbox" id="actPeeNight" style="width:auto;"> 🌙 קרה במהלך הלילה (שעה לא ידועה)
+                    </label>
+                </div>
+
+                <div class="sub-option-toggle" id="grassMeetupToggle" style="display:none;">
+                    <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; font-weight:normal; cursor:pointer;">
+                        <input type="checkbox" id="actDogMeetup" style="width:auto;"> 🐕 היה מפגש עם כלבים אחרים
                     </label>
                 </div>
             </div>
@@ -502,15 +531,21 @@
         }
 
         const actionsList = s.split(' + ').map(a => a.trim()).filter(Boolean);
+
+        const mealToken = actionsList.find(a => a === 'ארוחה' || a.startsWith('ארוחת '));
+        const mealType = mealToken && mealToken.startsWith('ארוחת ') ? mealToken.replace('ארוחת ', '') : '';
+
         return {
-            notes, rangeStart, rangeEnd,
+            notes, rangeStart, rangeEnd, mealType,
             actions: {
                 walk: actionsList.includes('טיול'),
-                food: actionsList.includes('ארוחה'),
-                pee: actionsList.includes('פיפי'),
+                food: !!mealToken,
+                pee: actionsList.includes('פיפי') || actionsList.includes(NIGHT_PEE_LABEL),
                 poo: actionsList.includes('קקי'),
-                grass: actionsList.includes('שיחק בדשא'),
-                excitedpee: actionsList.includes('פיפי התרגשות')
+                grass: actionsList.includes('שיחק בדשא') || actionsList.includes(GRASS_MEETUP_LABEL),
+                excitedpee: actionsList.includes('פיפי התרגשות'),
+                peeNight: actionsList.includes(NIGHT_PEE_LABEL),
+                dogMeetup: actionsList.includes(GRASS_MEETUP_LABEL)
             }
         };
     }
@@ -524,6 +559,24 @@
         walk: 'טיול', food: 'ארוחה', pee: 'פיפי',
         poo: 'קקי', grass: 'שיחק בדשא', excitedpee: 'פיפי התרגשות'
     };
+    const NIGHT_PEE_LABEL = 'פיפי 🌙 שעה לא ידועה';
+    const GRASS_MEETUP_LABEL = 'שיחק בדשא 🐕 מפגש כלבים';
+
+    // Uses the special "unknown time" label for pee when the night-toggle is checked,
+    // the specific meal-time label for food, and the dog-meetup label for grass
+    function labelFor(key) {
+        if (key === 'pee' && document.getElementById('actPeeNight').checked) {
+            return NIGHT_PEE_LABEL;
+        }
+        if (key === 'food') {
+            const mealType = document.getElementById('mealType').value;
+            return `ארוחת ${mealType}`;
+        }
+        if (key === 'grass' && document.getElementById('actDogMeetup').checked) {
+            return GRASS_MEETUP_LABEL;
+        }
+        return eventLabels[key];
+    }
 
     function toggleActive(el) {
         const checkbox = el.querySelector('input');
@@ -532,6 +585,20 @@
 
         if (checkbox.id === 'actWalk') {
             document.getElementById('walkTimes').classList.toggle('show', checkbox.checked);
+        }
+
+        if (checkbox.id === 'actPee') {
+            document.getElementById('nightPeeToggle').style.display = checkbox.checked ? 'block' : 'none';
+            if (!checkbox.checked) document.getElementById('actPeeNight').checked = false;
+        }
+
+        if (checkbox.id === 'actFood') {
+            document.getElementById('mealTypeToggle').style.display = checkbox.checked ? 'block' : 'none';
+        }
+
+        if (checkbox.id === 'actGrass') {
+            document.getElementById('grassMeetupToggle').style.display = checkbox.checked ? 'block' : 'none';
+            if (!checkbox.checked) document.getElementById('actDogMeetup').checked = false;
         }
 
         updatePerEventPanel();
@@ -615,7 +682,7 @@
 
         const entries = Object.keys(groups).sort().map(time => {
             const keys = groups[time];
-            let details = keys.map(k => eventLabels[k]).join(" + ");
+            let details = keys.map(k => labelFor(k)).join(" + ");
             if (keys.includes('walk') && (walkStart || walkEnd)) {
                 details += ` [🕐 ${walkStart || '?'} - ${walkEnd || '?'}]`;
             } else if (keys.includes('grass') && (grassStart || grassEnd)) {
@@ -692,6 +759,15 @@
             btn.classList.toggle('active', isOn);
         });
 
+        document.getElementById('nightPeeToggle').style.display = parsed.actions.pee ? 'block' : 'none';
+        document.getElementById('actPeeNight').checked = !!parsed.actions.peeNight;
+
+        document.getElementById('mealTypeToggle').style.display = parsed.actions.food ? 'block' : 'none';
+        document.getElementById('mealType').value = parsed.mealType || 'בוקר';
+
+        document.getElementById('grassMeetupToggle').style.display = parsed.actions.grass ? 'block' : 'none';
+        document.getElementById('actDogMeetup').checked = !!parsed.actions.dogMeetup;
+
         // Per-event time overrides always start blank on edit - the entry's single
         // stored time becomes the general "שעת הדיווח" value above
         eventKeys.forEach(key => {
@@ -745,6 +821,12 @@
         document.getElementById('walkTimes').classList.remove('show');
         document.getElementById('reportTime').value = currentTimeHHMM();
         document.getElementById('location').value = 'בחוץ / ברחוב';
+        document.getElementById('actPeeNight').checked = false;
+        document.getElementById('nightPeeToggle').style.display = 'none';
+        document.getElementById('mealType').value = 'בוקר';
+        document.getElementById('mealTypeToggle').style.display = 'none';
+        document.getElementById('actDogMeetup').checked = false;
+        document.getElementById('grassMeetupToggle').style.display = 'none';
 
         eventKeys.forEach(key => {
             const input = document.getElementById('eventTime_' + key);
@@ -772,18 +854,13 @@
             return;
         }
 
-        // Only show today's and yesterday's entries in this list (by the 4am-boundary
-        // "business day") - older entries stay saved in Firebase for the statistics
-        // below, just hidden here to keep the daily view focused and short.
-        const todayBizDay = businessDayOfDate(new Date());
-        const yesterdayBizDay = businessDayOfDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
-        const visibleLogs = logs.filter(l => {
-            const day = businessDayOfLogDate(l.date);
-            return day === todayBizDay || day === yesterdayBizDay;
-        });
+        // Only show entries from the last rolling 24 hours - older entries stay saved
+        // in Firebase for the statistics below, just hidden here to keep this list short.
+        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+        const visibleLogs = logs.filter(l => parseLogDate(l.date).getTime() >= cutoff);
 
         if (visibleLogs.length === 0) {
-            logsContainer.innerHTML = '<div style="text-align:center; color:#888;">אין דיווחים מהיומיים האחרונים</div>';
+            logsContainer.innerHTML = '<div style="text-align:center; color:#888;">אין דיווחים מ-24 השעות האחרונות</div>';
             updateDashboard();
             renderDailyStats();
             return;
@@ -886,7 +963,7 @@
         const lastWalk = sorted.find(l => l.details.includes('טיול'));
         document.getElementById('lastWalkTime').innerText = lastWalk ? timeAgoText(walkEffectiveDate(lastWalk)) : '--';
 
-        const lastMeal = sorted.find(l => l.details.includes('ארוחה'));
+        const lastMeal = sorted.find(l => l.details.includes('ארוחה') || l.details.includes('ארוחת'));
         document.getElementById('lastMealTime').innerText = lastMeal ? timeAgoText(lastMeal.date) : '--';
 
         const lastPee = sorted.find(l => l.details.includes('פיפי'));
@@ -959,6 +1036,9 @@
             `<text x="${xFor(i).toFixed(1)}" y="${height - 8}" font-size="9" fill="#777" text-anchor="middle">${d.label}</text>`
         ).join('');
 
+        const avgWalks = (days.reduce((sum, d) => sum + d.walks, 0) / days.length).toFixed(1);
+        const avgAccidents = (days.reduce((sum, d) => sum + d.accidents, 0) / days.length).toFixed(1);
+
         return `
             <svg viewBox="0 0 ${width} ${height}" style="width:100%; height:auto; direction:ltr;">
                 ${gridLines}
@@ -971,6 +1051,9 @@
             <div style="display:flex; justify-content:center; gap:16px; margin-top:8px; font-size:0.8rem;">
                 <span><span style="display:inline-block; width:10px; height:10px; background:#4a90e2; border-radius:50%; margin-left:4px;"></span>טיולים</span>
                 <span><span style="display:inline-block; width:10px; height:10px; background:#e74c3c; border-radius:50%; margin-left:4px;"></span>פספוסים</span>
+            </div>
+            <div style="text-align:center; margin-top:10px; font-size:0.85rem; color:#555; border-top:1px solid #eee; padding-top:8px;">
+                ממוצע יומי (7 ימים): 🦮 ${avgWalks} טיולים &nbsp;|&nbsp; ⚠️ ${avgAccidents} פספוסים
             </div>
         `;
     }
