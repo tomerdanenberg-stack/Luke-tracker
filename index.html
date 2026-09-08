@@ -18,6 +18,7 @@
             --card-bg: #ffffff;
             --text: #333333;
         }
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: var(--bg);
@@ -408,7 +409,7 @@
 
                 <div class="sub-option-toggle" id="grassMeetupToggle" style="display:none;">
                     <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; font-weight:normal; cursor:pointer;">
-                        <input type="checkbox" id="actDogMeetup" style="width:auto;"> 🐕 היה מפגש עם כלבים אחרים
+                        <input type="checkbox" id="actDogMeetup" style="width:auto;"> 🐕 מפגש כלבים
                     </label>
                 </div>
             </div>
@@ -963,7 +964,12 @@
         document.getElementById('lastWalkTime').innerText = lastWalk ? timeAgoText(walkEffectiveDate(lastWalk)) : '--';
 
         const lastMeal = sorted.find(l => l.details.includes('ארוחה') || l.details.includes('ארוחת'));
-        document.getElementById('lastMealTime').innerText = lastMeal ? timeAgoText(lastMeal.date) : '--';
+        if (lastMeal) {
+            const mealType = parseDetails(lastMeal.details).mealType;
+            document.getElementById('lastMealTime').innerText = timeAgoText(lastMeal.date) + (mealType ? ` (${mealType})` : '');
+        } else {
+            document.getElementById('lastMealTime').innerText = '--';
+        }
 
         const lastPee = sorted.find(l => l.details.includes('פיפי'));
         document.getElementById('lastPeeTime').innerText = lastPee ? timeAgoText(lastPee.date) : '--';
@@ -972,33 +978,76 @@
         document.getElementById('lastPooTime').innerText = lastPoo ? timeAgoText(lastPoo.date) : '--';
     }
 
+    function timeStrToMinutes(t) {
+        const [h, m] = t.split(':').map(Number);
+        return h * 60 + m;
+    }
+
     function renderDailyStats() {
         const container = document.getElementById('statsList');
         container.innerHTML = '';
 
-        // Group entries by business day (4am-3:59am)
-        const byDay = {}; // "YYYY-MM-DD" -> { walks: n, accidents: n }
+        // Group entries by business day (4am-3:59am), tracking total entries too so
+        // we can tell "no reports that day" apart from "reports, but zero walks/accidents"
+        const byDay = {}; // "YYYY-MM-DD" -> { walks, accidents, total }
         logs.forEach(l => {
             const day = businessDayOfLogDate(l.date);
-            if (!byDay[day]) byDay[day] = { walks: 0, accidents: 0 };
+            if (!byDay[day]) byDay[day] = { walks: 0, accidents: 0, total: 0 };
+            byDay[day].total++;
             if (l.details.includes('טיול')) byDay[day].walks++;
             if (l.location.includes('בית') || l.location.includes('משטחים') || l.location.includes('מרפסת')) byDay[day].accidents++;
         });
 
-        // Always show the last 7 business days, oldest to newest, even if a day has
-        // zero entries, so the line chart has a consistent weekly x-axis.
+        // Look back up to 60 days to find the most recent 7 business-days that actually
+        // have at least one report - days with no reports at all are skipped entirely,
+        // rather than shown as a false "0 walks, 0 accidents" data point.
         const todayBiz = businessDayOfDate(new Date());
         const [ty, tm, td] = todayBiz.split('-').map(Number);
         const days = [];
-        for (let i = 6; i >= 0; i--) {
+        for (let i = 0; i < 60 && days.length < 7; i++) {
             const d = new Date(ty, tm - 1, td - i);
             const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-            const stats = byDay[key] || { walks: 0, accidents: 0 };
-            const label = String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
-            days.push({ key, label, walks: stats.walks, accidents: stats.accidents });
+            const stats = byDay[key];
+            if (stats && stats.total > 0) {
+                const label = String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
+                days.push({ key, label, walks: stats.walks, accidents: stats.accidents });
+            }
+        }
+        days.reverse(); // oldest to newest, for left-to-right chart order
+
+        if (days.length === 0) {
+            container.innerHTML = '<div style="text-align:center; color:#888;">אין עדיין נתונים</div>';
+            return;
         }
 
-        container.innerHTML = buildWeeklyChartSVG(days);
+        // Average walk duration - only counting walks that actually had a start+end
+        // time range reported; walks without one are ignored rather than skewing the
+        // average with a made-up/missing duration.
+        const dayKeys = new Set(days.map(d => d.key));
+        const durations = [];
+        logs.forEach(l => {
+            if (!l.details.includes('טיול')) return;
+            if (!dayKeys.has(businessDayOfLogDate(l.date))) return;
+            const parsed = parseDetails(l.details);
+            if (parsed.actions.walk && parsed.rangeStart && parsed.rangeEnd) {
+                const startMin = timeStrToMinutes(parsed.rangeStart);
+                let endMin = timeStrToMinutes(parsed.rangeEnd);
+                if (endMin < startMin) endMin += 24 * 60; // crossed midnight
+                durations.push(endMin - startMin);
+            }
+        });
+
+        let avgWalkDurationHTML = '';
+        if (durations.length > 0) {
+            const avgMin = Math.round(durations.reduce((a, b) => a + b, 0) / durations.length);
+            const durText = avgMin >= 60 ? `${Math.floor(avgMin / 60)} ש' ${avgMin % 60} דק'` : `${avgMin} דק'`;
+            avgWalkDurationHTML = `
+                <div style="text-align:center; margin-top:8px; font-size:0.85rem; color:#555;">
+                    ⏱️ אורך טיול ממוצע: ${durText} <span style="color:#999;">(מבוסס על ${durations.length} טיולים עם טווח שעות מדווח)</span>
+                </div>`;
+        }
+
+        container.innerHTML = buildWeeklyChartSVG(days) + avgWalkDurationHTML;
     }
 
     function buildWeeklyChartSVG(days) {
@@ -1052,7 +1101,7 @@
                 <span><span style="display:inline-block; width:10px; height:10px; background:#e74c3c; border-radius:50%; margin-left:4px;"></span>פספוסים</span>
             </div>
             <div style="text-align:center; margin-top:10px; font-size:0.85rem; color:#555; border-top:1px solid #eee; padding-top:8px;">
-                ממוצע יומי (7 ימים): 🦮 ${avgWalks} טיולים &nbsp;|&nbsp; ⚠️ ${avgAccidents} פספוסים
+                ממוצע יומי (${days.length} ימים עם דיווחים): 🦮 ${avgWalks} טיולים &nbsp;|&nbsp; ⚠️ ${avgAccidents} פספוסים
             </div>
         `;
     }
